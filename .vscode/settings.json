@@ -1,0 +1,17 @@
+{
+  "C_Cpp.clang_format_style": "Visual Studio",
+  "editor.formatOnSave": false,
+  "[cpp]": {
+    "editor.quickSuggestions": true
+  },
+  "[c]": {
+    "editor.quickSuggestions": true
+  },
+  "C_Cpp.intelliSenseEngineFallback": "Enabled",
+  "idf.portWin": "COM4",
+  "idf.espIdfPathWin": "d:\\esp-idf",
+  "files.associations": {
+    "config.h": "c"
+  },
+  "idf.adapterTargetName": "esp32"
+}
