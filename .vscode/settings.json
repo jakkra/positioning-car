@@ -8,10 +8,14 @@
     "editor.quickSuggestions": true
   },
   "C_Cpp.intelliSenseEngineFallback": "Enabled",
-  "idf.portWin": "COM4",
+  "idf.portWin": "COM22",
   "idf.espIdfPathWin": "d:\\esp-idf",
   "files.associations": {
-    "config.h": "c"
+    "config.h": "c",
+    "mcpwm.h": "c",
+    "esp_https_server.h": "c",
+    "istream": "c",
+    "*.inc": "c"
   },
   "idf.adapterTargetName": "esp32"
 }
