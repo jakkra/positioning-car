@@ -11,12 +11,16 @@
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 #include "string.h"
+#include "mdns.h"
+#include "lwip/apps/netbiosns.h"
 
 #include "rc_receiver_rmt.h"
 #include "web_server.h"
 #include "car_config.h"
 
 static char TAG[] = "rc_car";
+
+#define USE_STATION
 
 #define MIN_STEER_VAL 	544
 #define MAX_STEER_VAL	2500
@@ -85,7 +89,6 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
     
     switch (event_id) {
         case WIFI_EVENT_AP_START:
-            webserver_start();
             break;
         case WIFI_EVENT_AP_STOP:
             break;
@@ -101,6 +104,16 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
             ESP_LOGW(TAG, "station "MACSTR" leave, AID=%d", MAC2STR(event->mac), event->aid);
             break;
         }
+    }
+
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        esp_wifi_connect();
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        ESP_LOGI(TAG, "Failed to connect WiFi");
+        esp_wifi_connect();
+    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
     }
 }
 
@@ -135,6 +148,32 @@ static void start_ap(void) {
     ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s", AP_SSID, AP_PASS);
 }
 
+static void start_station(void)
+{
+    ESP_ERROR_CHECK(esp_netif_init());
+
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_netif_create_default_wifi_sta();
+
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT,  IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL));
+
+    wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = WIFI_STA_SSID,
+            .password = WIFI_STA_PASSWORD,
+        },
+    };
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config) );
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI(TAG, "WiFi Sta Started");
+}
+
 static void handle_websocket_status(websocket_status_t status) {
     if (status == WEBSOCKET_STATUS_CONNECTED) {
         websocket_connected = true;
@@ -143,6 +182,23 @@ static void handle_websocket_status(websocket_status_t status) {
     } else {
         assert(false); // Unhandled
     }
+}
+
+static void initialise_mdns(void)
+{
+    ESP_ERROR_CHECK(mdns_init());
+    ESP_ERROR_CHECK(mdns_hostname_set("df-car"));
+    ESP_ERROR_CHECK(mdns_instance_name_set("df-car-instance"));
+
+    //structure with TXT records
+    mdns_txt_item_t serviceTxtData[2] = {
+        {"board","esp32"},
+        {"path", "/"}
+    };
+
+    ESP_ERROR_CHECK(mdns_service_add("Direction-Finding-Car", "_http", "_tcp", 80, serviceTxtData, sizeof(serviceTxtData) / sizeof(serviceTxtData[0])));
+    netbiosns_init();
+    netbiosns_set_name("df-car");
 }
 
 void app_main() {
@@ -158,7 +214,13 @@ void app_main() {
 	xTaskCreate(&driving_task,"receiver_task", 2048, NULL, 5, NULL);
     
 	webserver_init(&handle_websocket_status);
+#ifdef USE_STATION
+    start_station();
+#else
 	start_ap();
+#endif
+    webserver_start();
+    initialise_mdns();
 	ESP_LOGW(TAG, "Started and running\n");
 }
 

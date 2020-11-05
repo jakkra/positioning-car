@@ -11,13 +11,8 @@
 
 #include "car_config.h"
 
-// Browsers don't like unsecure websockets
-//#define ROVER_WS_SSL
-
 #include "config.h"
-#ifdef ROVER_WS_SSL
-#include "esp_https_server.h"
-#endif
+
 
 #define WS_SERVER_PORT          80
 #define MAX_WS_INCOMING_SIZE    100
@@ -93,31 +88,6 @@ void webserver_start(void)
     ESP_LOGI(TAG, "webserver_start");
     esp_err_t err;
 
-#ifdef ROVER_WS_SSL
-    httpd_ssl_config_t config = HTTPD_SSL_CONFIG_DEFAULT();
-
-    extern const unsigned char cacert_pem_start[] asm("_binary_cacert_pem_start");
-    extern const unsigned char cacert_pem_end[]   asm("_binary_cacert_pem_end");
-    config.cacert_pem = cacert_pem_start;
-    config.cacert_len = cacert_pem_end - cacert_pem_start;
-
-    extern const unsigned char prvtkey_pem_start[] asm("_binary_prvtkey_pem_start");
-    extern const unsigned char prvtkey_pem_end[]   asm("_binary_prvtkey_pem_end");
-    config.prvtkey_pem = prvtkey_pem_start;
-    config.prvtkey_len = prvtkey_pem_end - prvtkey_pem_start;
-
-    config.httpd.server_port = WS_SERVER_PORT;
-    config.httpd.close_fn = on_client_disconnect;
-    config.httpd.max_open_sockets = MAX_WS_CONNECTIONS;
-
-    err = httpd_ssl_start(&server.handle, &config);
-    assert(err == ESP_OK);
-
-    err = httpd_register_uri_handler(server.handle, &ws);
-    assert(err == ESP_OK);
-    server.running = true;
-    ESP_LOGI(TAG, "Web Server started on port %d, server handle %p", config.httpd.server_port, server.handle);
-#else
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 
     config.server_port = WS_SERVER_PORT;
@@ -134,9 +104,7 @@ void webserver_start(void)
     assert(err == ESP_OK);
 
     server.running = true;
-    ESP_LOGI(TAG, "Web Server started on port %d, server handle %p", config.server_port, server.handle);
-#endif
-    
+    ESP_LOGI(TAG, "Web Server started on port %d, server handle %p", config.server_port, server.handle);    
 }
 
 static void on_client_disconnect(httpd_handle_t hd, int sockfd)

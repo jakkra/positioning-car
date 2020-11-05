@@ -35,4 +35,7 @@
 #define AP_SSID                             "DF_CAR"
 #define AP_PASS                             ""
 
+#define WIFI_STA_SSID                       "ssid"
+#define WIFI_STA_PASSWORD                   "pwss"
+
 extern const uint16_t config_default_ch_values[RC_NUM_CHANNELS];

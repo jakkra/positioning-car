@@ -15,7 +15,9 @@
     "mcpwm.h": "c",
     "esp_https_server.h": "c",
     "istream": "c",
-    "*.inc": "c"
+    "*.inc": "c",
+    "car_config.h": "c",
+    "rc_receiver_rmt.h": "c"
   },
   "idf.adapterTargetName": "esp32"
 }

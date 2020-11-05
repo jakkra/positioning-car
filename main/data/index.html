@@ -69,11 +69,11 @@
     <div id="info">
       <br/>
       <button class="btn" value="Connect" onclick="tryConnect(this.value)">Connect</button>
+      <input type="text" id="wsUrlInput" name="wsUrlInput" value="ws://df-car:80/ws">
       <button class="btn" value="SW1-Press" onclick="onModeChange(this.value)">SW1-Press</button>
       <button class="btn" value="SW1-Release" onclick="onModeChange(this.value)">SW1-Release</button>
       <button class="btn" value="SW2-Press" onclick="onModeChange(this.value)">SW2-Press</button>
       <button class="btn" value="SW2-Release" onclick="onModeChange(this.value)">SW2-Release</button>
-      <div id="output">HEHEHLEHÖEKLJ</div>
       <p></p>
       <span id="resultLeft"></span> <span id="resultRight"></span>
     </div> 
@@ -92,8 +92,10 @@
       console.log("touchscreen is", VirtualJoystick.touchScreenAvailable() ? "available" : "not available");
 
       function connect() {
-        connection = new WebSocket('ws://192.168.4.1:80/ws');
-        console.log("TRY CONNECT");
+        var url = document.getElementById("wsUrlInput").value
+
+        console.log("TRY CONNECT", url);
+        connection = new WebSocket(url);
         connection.onopen = function () {
           console.log("Websocket Open");
           roverConnected = true;
