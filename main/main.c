@@ -38,7 +38,7 @@ static uint16_t get_channel_value(uint16_t channel) {
     if (websocket_connected) {
         value = web_server_controller_get_value(channel);
     } else {
-        value = rc_receiver_rmt_get_val(RC_STEER_CHANNEL);
+        value = rc_receiver_rmt_get_val(channel);
     }
 
     return value;
@@ -70,6 +70,7 @@ static void driving_task(void *ignore) {
         } else {
             gpio_set_level(SWITCH_CONTROL_BUTTON_PIN, 1);
         }
+        
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }

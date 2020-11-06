@@ -34,6 +34,7 @@ typedef struct web_server {
     uint16_t                        channel_values[RC_NUM_CHANNELS];
     websocket_connection_status*    callback;
     bool                            client_connected;
+    esp_timer_handle_t              failsafe_timer;
 } web_server;
 
 
@@ -41,7 +42,7 @@ static void on_client_disconnect(httpd_handle_t hd, int sockfd);
 static esp_err_t http_resp_send_index(httpd_req_t *req);
 static esp_err_t http_resp_send_joystick(httpd_req_t *req);
 static void reset_ch_values(void);
-
+static void failsafe_timer_callback(void* arg);
 static esp_err_t ws_handler(httpd_req_t *req);
 
 static const httpd_uri_t ws = {
@@ -103,6 +104,13 @@ void webserver_start(void)
     err = httpd_register_uri_handler(server.handle, &joystick_download);
     assert(err == ESP_OK);
 
+    const esp_timer_create_args_t failsafe_timer_args = {
+            .callback = &failsafe_timer_callback,
+            .arg = NULL,
+            .name = "failsafe-timer"
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&failsafe_timer_args, &server.failsafe_timer));
+
     server.running = true;
     ESP_LOGI(TAG, "Web Server started on port %d, server handle %p", config.server_port, server.handle);    
 }
@@ -111,6 +119,7 @@ static void on_client_disconnect(httpd_handle_t hd, int sockfd)
 {
     ESP_LOGI(TAG, "Client disconnected");
     server.client_connected = false;
+    ESP_ERROR_CHECK(esp_timer_stop(server.failsafe_timer));
     server.callback(WEBSOCKET_STATUS_DISCONNECTED);
 }
 
@@ -118,6 +127,12 @@ static void reset_ch_values() {
     for (uint8_t i = 0; i < RC_NUM_CHANNELS; i++) {
         server.channel_values[i] = config_default_ch_values[i];
     }
+}
+
+static void failsafe_timer_callback(void* arg)
+{
+    ESP_LOGE(TAG, "No data on WS in 1s, reset values to default");
+    reset_ch_values();
 }
 
 static esp_err_t ws_handler(httpd_req_t *req)
@@ -150,6 +165,10 @@ static esp_err_t ws_handler(httpd_req_t *req)
                 ESP_LOGI(TAG, "Client connected");
                 server.client_connected = true;
                 server.callback(WEBSOCKET_STATUS_CONNECTED);
+                ESP_ERROR_CHECK(esp_timer_start_once(server.failsafe_timer, 1000 * 1000));
+            } else {
+                esp_timer_stop(server.failsafe_timer);
+                ESP_ERROR_CHECK(esp_timer_start_once(server.failsafe_timer, 1000 * 1000));
             }
         } else {
             ESP_LOGI(TAG, "Invalid binary length");
