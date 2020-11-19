@@ -8,7 +8,7 @@
 #include "lwip/sys.h"
 #include "esp_http_server.h"
 #include "esp_timer.h"
-
+#include "string.h"
 #include "car_config.h"
 
 #include "config.h"
@@ -19,31 +19,29 @@
 #define WS_CONNECT_MESSAGE      "CONNECT"
 #define MAX_WS_CONNECTIONS      5
 #define INVALID_FD              -1
-#define TX_BUF_SIZE             100
-
-typedef struct ws_client {
-    int     fd;
-    bool    tx_in_progress;
-} ws_client;
+#define MAX_TX_BUF_SIZE         512
 
 typedef struct web_server {
     httpd_handle_t                  handle;
+    int                             sockfd;
     bool                            running;
-    uint8_t                         tx_buf[TX_BUF_SIZE];
+    uint8_t                         tx_buf[MAX_TX_BUF_SIZE];
     uint16_t                        tx_buf_len;
     uint16_t                        channel_values[RC_NUM_CHANNELS];
     websocket_connection_status*    callback;
     bool                            client_connected;
     esp_timer_handle_t              failsafe_timer;
+    bool                            tx_in_progress;
 } web_server;
 
-
+static esp_err_t on_client_connected(httpd_handle_t hd, int sockfd);
 static void on_client_disconnect(httpd_handle_t hd, int sockfd);
 static esp_err_t http_resp_send_index(httpd_req_t *req);
 static esp_err_t http_resp_send_joystick(httpd_req_t *req);
 static void reset_ch_values(void);
 static void failsafe_timer_callback(void* arg);
 static esp_err_t ws_handler(httpd_req_t *req);
+static void async_send(void *arg);
 
 static const httpd_uri_t ws = {
     .uri        = "/ws",
@@ -93,6 +91,7 @@ void webserver_start(void)
 
     config.server_port = WS_SERVER_PORT;
     config.close_fn = on_client_disconnect;
+    config.open_fn = NULL; // Not for the WS connection but for the HTTP. So can't be used for WS connected unfortunately.
     config.max_open_sockets = MAX_WS_CONNECTIONS;
     err = httpd_start(&server.handle, &config);
     assert(err == ESP_OK);
@@ -115,11 +114,67 @@ void webserver_start(void)
     ESP_LOGI(TAG, "Web Server started on port %d, server handle %p", config.server_port, server.handle);    
 }
 
+esp_err_t webserver_ws_send(uint8_t* payload, uint32_t len) {
+    esp_err_t err;
+    assert(len <= MAX_TX_BUF_SIZE);
+
+    if (server.tx_in_progress) {
+        return ESP_FAIL;
+    }
+    server.tx_in_progress = true;
+    server.tx_buf_len = len;
+    memset(server.tx_buf, 0, MAX_TX_BUF_SIZE);
+    memcpy(server.tx_buf, payload, len);
+    err = httpd_queue_work(server.handle, async_send, NULL);
+    if (err != ESP_OK) {
+        server.tx_in_progress = false;
+    }
+    return err;
+}
+
+static void async_send(void *arg)
+{
+    esp_err_t err;
+    httpd_ws_frame_t packet;
+
+    memset(&packet, 0, sizeof(httpd_ws_frame_t));
+    packet.payload = server.tx_buf;
+    packet.len = server.tx_buf_len;
+    packet.type = HTTPD_WS_TYPE_TEXT;
+    packet.final = true;
+
+    err = httpd_ws_send_frame_async(server.handle, server.sockfd, &packet);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "httpd_ws_send_frame_async failed: %d", err);
+    }
+    server.tx_in_progress = false;
+}
+
+static esp_err_t on_client_connected(httpd_handle_t hd, int sockfd)
+{
+    httpd_ws_client_info_t  info = httpd_ws_get_fd_info(hd, sockfd);
+    if (info != HTTPD_WS_CLIENT_WEBSOCKET) {
+        return ESP_OK;
+    }
+
+    ESP_LOGI(TAG, "WS Client connected %d", info);
+    server.client_connected = true;
+    server.handle = hd;
+    server.sockfd = sockfd;
+    server.callback(WEBSOCKET_STATUS_CONNECTED);
+    ESP_ERROR_CHECK(esp_timer_start_once(server.failsafe_timer, 1000 * 1000));
+    return ESP_OK;
+}
+
 static void on_client_disconnect(httpd_handle_t hd, int sockfd)
 {
-    ESP_LOGI(TAG, "Client disconnected");
+    if (server.sockfd != sockfd) {
+        return;
+    }
+
+    ESP_LOGI(TAG, "WS Client disconnected");
     server.client_connected = false;
-    ESP_ERROR_CHECK(esp_timer_stop(server.failsafe_timer));
+    esp_timer_stop(server.failsafe_timer);
     server.callback(WEBSOCKET_STATUS_DISCONNECTED);
 }
 
@@ -133,6 +188,7 @@ static void failsafe_timer_callback(void* arg)
 {
     ESP_LOGE(TAG, "No data on WS in 1s, reset values to default");
     reset_ch_values();
+    httpd_sess_trigger_close(server.handle, server.sockfd);
 }
 
 static esp_err_t ws_handler(httpd_req_t *req)
@@ -161,21 +217,18 @@ static esp_err_t ws_handler(httpd_req_t *req)
                     server.channel_values[i] = config_default_ch_values[i];
                 }
             }
-            if (!server.client_connected) {
-                ESP_LOGI(TAG, "Client connected");
-                server.client_connected = true;
-                server.callback(WEBSOCKET_STATUS_CONNECTED);
-                ESP_ERROR_CHECK(esp_timer_start_once(server.failsafe_timer, 1000 * 1000));
-            } else {
+            if (server.client_connected) {
                 esp_timer_stop(server.failsafe_timer);
                 ESP_ERROR_CHECK(esp_timer_start_once(server.failsafe_timer, 1000 * 1000));
+            } else {
+                on_client_connected(req->handle, httpd_req_to_sockfd(req));
             }
         } else {
             ESP_LOGI(TAG, "Invalid binary length");
             reset_ch_values();
         }
     }
-    printf("%d, %d \t %d, %d \t %d, %d\n", server.channel_values[0], server.channel_values[1], server.channel_values[2],  server.channel_values[3], server.channel_values[4], server.channel_values[5]);    
+    //printf("%d, %d \t %d, %d \t %d, %d\n", server.channel_values[0], server.channel_values[1], server.channel_values[2],  server.channel_values[3], server.channel_values[4], server.channel_values[5]);    
    
     return ESP_OK;
 }

@@ -75,5 +75,6 @@ void rc_receiver_rmt_init(void)
 uint16_t rc_receiver_rmt_get_val(uint8_t channel)
 {
     assert(channel < RC_NUM_CHANNELS);
+    //printf("%d, %d \t %d, %d \t %d, %d\n", channel_values[0], channel_values[1], channel_values[2],  channel_values[3], channel_values[4], channel_values[5]);    
     return channel_values[channel];    
 }

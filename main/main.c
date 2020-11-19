@@ -16,6 +16,7 @@
 
 #include "rc_receiver_rmt.h"
 #include "web_server.h"
+#include "line_follower.h"
 #include "car_config.h"
 
 static char TAG[] = "rc_car";
@@ -31,11 +32,15 @@ static uint32_t map(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_m
 
 
 static bool websocket_connected = false;
+static bool auto_pilot_line_follow = false;
+static vprintf_like_t originalLogFn = NULL;
 
 static uint16_t get_channel_value(uint16_t channel) {
     uint16_t value;
 
-    if (websocket_connected) {
+    if (auto_pilot_line_follow && (channel == RC_STEER_CHANNEL)) { // || channel == RC_MOTOR_CHANNEL)) { I'll control speed first
+        value = line_follower_get_value(channel);
+    } else if (websocket_connected) {
         value = web_server_controller_get_value(channel);
     } else {
         value = rc_receiver_rmt_get_val(channel);
@@ -70,7 +75,14 @@ static void driving_task(void *ignore) {
         } else {
             gpio_set_level(SWITCH_CONTROL_BUTTON_PIN, 1);
         }
-        
+
+        rc_value = get_channel_value(RC_MODE_SW1_CHANNEL);
+        if (rc_value < 1600) {
+            auto_pilot_line_follow = false;
+        } else {
+            auto_pilot_line_follow = true;
+        }
+
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
@@ -175,11 +187,22 @@ static void start_station(void)
     ESP_LOGI(TAG, "WiFi Sta Started");
 }
 
+static int log_wrapper(const char *p, va_list args) {
+    char buffer[512];
+    vsnprintf(buffer, sizeof(buffer), p, args);
+    printf("%s\n", buffer);
+    return webserver_ws_send((uint8_t*)buffer, strlen(buffer));
+}
+
 static void handle_websocket_status(websocket_status_t status) {
     if (status == WEBSOCKET_STATUS_CONNECTED) {
         websocket_connected = true;
+        printf("Switch logger\n");
+        originalLogFn = esp_log_set_vprintf(log_wrapper);
     } else if (status == WEBSOCKET_STATUS_DISCONNECTED) {
         websocket_connected = false;
+        printf("Switch back logger\n");
+        esp_log_set_vprintf(originalLogFn);
     } else {
         assert(false); // Unhandled
     }
@@ -212,7 +235,7 @@ void app_main() {
 
     rc_receiver_rmt_init();
     configure_switch_gpio();
-    xTaskCreate(&driving_task,"receiver_task", 2048, NULL, 5, NULL);
+    xTaskCreate(&driving_task,"receiver_task", 4096, NULL, 5, NULL);
     
     webserver_init(&handle_websocket_status);
 #ifdef USE_STATION
@@ -223,6 +246,7 @@ void app_main() {
     webserver_start();
     initialise_mdns();
     ESP_LOGW(TAG, "Started and running\n");
+    
 }
 
 uint32_t map(uint32_t x, uint32_t in_min, uint32_t in_max, uint32_t out_min, uint32_t out_max) {

@@ -18,7 +18,7 @@
 #define RC_CH2_INPUT            34
 #define RC_CH3_INPUT            25
 #define RC_CH4_INPUT            26
-#define RC_CH5_INPUT            27
+#define RC_CH5_INPUT            21
 #define RC_CH6_INPUT            23
 
 #define RC_STEER_CHANNEL        RC_CH1
@@ -29,6 +29,9 @@
 
 #define MOTOR_PIN               32
 #define STEER_SERVO_PIN         33
+
+#define IR_SENSOR_LEFT_PIN      18
+#define IR_SENSOR_RIGHT_PIN     5
 
 #define SWITCH_CONTROL_BUTTON_PIN 22
 

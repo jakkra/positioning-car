@@ -17,7 +17,14 @@
     "istream": "c",
     "*.inc": "c",
     "car_config.h": "c",
-    "rc_receiver_rmt.h": "c"
+    "rc_receiver_rmt.h": "c",
+    "functional": "c",
+    "system_error": "c",
+    "type_traits": "c",
+    "xlocmon": "c",
+    "xtr1common": "c",
+    "iosfwd": "c",
+    "xlocbuf": "c"
   },
   "idf.adapterTargetName": "esp32"
 }
