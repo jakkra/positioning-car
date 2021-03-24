@@ -129,7 +129,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t e
         ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
     }
 }
-
+#ifdef CONFIG_WIFI_MODE_AP
 static void start_ap(void) {
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -143,14 +143,14 @@ static void start_ap(void) {
 
     wifi_config_t wifi_config = {
         .ap = {
-            .ssid = AP_SSID,
-            .ssid_len = strlen(AP_SSID),
-            .password = AP_PASS,
+            .ssid = CONFIG_AP_SSID,
+            .ssid_len = strlen(CONFIG_AP_SSID),
+            .password = CONFIG_AP_PASS,
             .max_connection = 3,
             .authmode = WIFI_AUTH_WPA2_PSK
         },
     };
-    if (strlen(AP_PASS) == 0) {
+    if (strlen(CONFIG_AP_PASS) == 0) {
         wifi_config.ap.authmode = WIFI_AUTH_OPEN;
     }
 
@@ -158,9 +158,11 @@ static void start_ap(void) {
     ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
 
-    ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s", AP_SSID, AP_PASS);
+    ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s", CONFIG_AP_SSID, CONFIG_AP_PASS);
 }
+#endif
 
+#ifdef CONFIG_WIFI_MODE_STATION
 static void start_station(void)
 {
     ESP_ERROR_CHECK(esp_netif_init());
@@ -176,8 +178,8 @@ static void start_station(void)
 
     wifi_config_t wifi_config = {
         .sta = {
-            .ssid = WIFI_STA_SSID,
-            .password = WIFI_STA_PASSWORD,
+            .ssid = CONFIG_WIFI_SSID,
+            .password = CONFIG_WIFI_PASSWORD,
         },
     };
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
@@ -186,6 +188,7 @@ static void start_station(void)
 
     ESP_LOGI(TAG, "WiFi Sta Started");
 }
+#endif
 
 static int log_wrapper(const char *p, va_list args) {
     char buffer[512];
@@ -238,9 +241,10 @@ void app_main() {
     xTaskCreate(&driving_task,"receiver_task", 4096, NULL, 5, NULL);
     
     webserver_init(&handle_websocket_status);
-#ifdef USE_STATION
+#ifdef CONFIG_WIFI_MODE_STATION
     start_station();
-#else
+#endif
+#ifdef CONFIG_WIFI_MODE_AP
     start_ap();
 #endif
     webserver_start();

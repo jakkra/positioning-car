@@ -35,10 +35,4 @@
 
 #define SWITCH_CONTROL_BUTTON_PIN 22
 
-#define AP_SSID                             "DF_CAR"
-#define AP_PASS                             ""
-
-#define WIFI_STA_SSID                       "lolololol"
-#define WIFI_STA_PASSWORD                   "password"
-
 extern const uint16_t config_default_ch_values[RC_NUM_CHANNELS];
